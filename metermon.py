@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3.7
 import json
 import subprocess
 import paho.mqtt.client as mqtt
