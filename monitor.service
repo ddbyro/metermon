@@ -1,0 +1,15 @@
+[Unit]
+Description=AMR IDM to MQTT
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment=SETTINGS_MODULE=settings
+ExecStart=/usr/bin/python3.7 /opt/metermon/metermon.py
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=metermon
+
+[Install]
+WantedBy=multi-user.target
