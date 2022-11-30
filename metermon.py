@@ -105,7 +105,7 @@ while True:
         elif data['Message']['Type'] in (2,9,12):  # gas meter
             msg['Type'] = "Gas"
             msg['Consumption'] = data['Message']['Consumption']
-            msg['Unit'] = "ft^3"
+            msg['Unit'] = "ft³"
         elif data['Message']['Type'] in (3,11,13):  # water meter
             msg['Type'] = "Water"
             msg['Consumption'] = data['Message']['Consumption'] / METERMON_WATER_DIVISOR  # convert to gal
@@ -120,7 +120,7 @@ while True:
         elif data['Message']['EndpointType'] in (2,9,12,156,188,220):  # gas meter
             msg['Type'] = "Gas"
             msg['Consumption'] = data['Message']['Consumption']
-            msg['Unit'] = "ft^3"
+            msg['Unit'] = "ft³"
         elif data['Message']['EndpointType'] in (3,11,13,171):  # water meter
             msg['Type'] = "Water"
             msg['Consumption'] = data['Message']['Consumption'] / METERMON_WATER_DIVISOR  # convert to gal
