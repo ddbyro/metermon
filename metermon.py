@@ -161,10 +161,10 @@ while True:
     if BYPASS_METER_FILTER or msg['ID'] in METERS_FILTER:
         # filter out cases where consumption value is negative
         if msg['Consumption'] > 0:
-            client.publish(MQTT_TOPIC_PREFIX+"/output",json.dumps(msg)) # publish
+            client.publish(MQTT_TOPIC_PREFIX+"/output",json.dumps(msg), retain=True) # publish
             if METERMON_SEND_BY_ID.lower() == "true":
-                client.publish(MQTT_TOPIC_PREFIX+"/"+msg['ID'],json.dumps(msg)) # also publish by ID if enabled
+                client.publish(MQTT_TOPIC_PREFIX+"/"+msg['ID'],json.dumps(msg), retain=True) # also publish by ID if enabled
             print(json.dumps(msg)) # also print
         # send raw json message if enabled
         if METERMON_SEND_RAW.lower() == "true":
-            client.publish(MQTT_TOPIC_PREFIX+"/raw",json.dumps(data)) # publish
+            client.publish(MQTT_TOPIC_PREFIX+"/raw",json.dumps(data), retain=True) # publish
