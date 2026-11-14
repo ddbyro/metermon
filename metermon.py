@@ -22,10 +22,24 @@ RTLAMR_UNIQUE = settings.RTLAMR_UNIQUE
 METERMON_SEND_RAW = settings.METERMON_SEND_RAW
 METERMON_SEND_BY_ID = settings.METERMON_SEND_BY_ID
 METERMON_ELECTRIC_DIVISOR = settings.METERMON_ELECTRIC_DIVISOR
-#METERMON_GAS_DIVISOR = settings.METERMON_GAS_DIVISOR
+METERMON_GAS_DIVISOR = getattr(settings, "METERMON_GAS_DIVISOR", 1.0)
 METERMON_WATER_DIVISOR = settings.METERMON_WATER_DIVISOR
 METERS_FILTER = settings.METERS_FILTER
 BYPASS_METER_FILTER = settings.BYPASS_METER_FILTER
+# Home Assistant MQTT discovery (needs METERMON_SEND_BY_ID = "True")
+HA_DISCOVERY = str(getattr(settings, "METERMON_HA_DISCOVERY", "False")).lower() == "true"
+HA_DISCOVERY_PREFIX = getattr(settings, "METERMON_HA_DISCOVERY_PREFIX", "homeassistant")
+# set False to announce only the "Last reading" sensor (e.g. meters already defined in HA YAML)
+HA_DISCOVERY_METERS = str(getattr(settings, "METERMON_HA_DISCOVERY_METERS", "True")).lower() == "true"
+HEARTBEAT_SECS = getattr(settings, "METERMON_HEARTBEAT_SECS", 60)
+
+_discovered: set = set()      # meter IDs whose discovery config was sent this connection
+_last_reading: Optional[float] = None  # wall-clock time of the last published reading
+_readings_published = 0
+_last_heartbeat = 0.0
+_started = time.time()
+
+HA_DEVICE_CLASS = {"Electric": "energy", "Gas": "gas", "Water": "water"}
 
 
 R900_LOOKUP = {
@@ -73,6 +87,82 @@ def on_connect(client, userdata, flags, reason_code, properties=None):
 
     # set mqtt status message
     client.publish(MQTT_TOPIC_PREFIX+"/status", payload="Online", qos=1, retain=True)
+    # re-announce discovery configs after every (re)connect
+    _discovered.clear()
+    if HA_DISCOVERY:
+        _publish_heartbeat_discovery()
+
+
+def _iso(ts: Optional[float]) -> Optional[str]:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(ts)) if ts else None
+
+
+def _ha_device() -> dict:
+    return {"identifiers": [MQTT_CLIENT_ID], "name": "metermon", "manufacturer": "metermon",
+            "model": "rtlamr to MQTT"}
+
+
+def _publish_heartbeat_discovery():
+    cfg = {
+        "name": "Last reading",
+        "unique_id": f"{MQTT_CLIENT_ID}_last_reading",
+        "object_id": f"{MQTT_CLIENT_ID}_last_reading",
+        "state_topic": MQTT_TOPIC_PREFIX + "/heartbeat",
+        "value_template": "{{ value_json.last_reading }}",
+        "device_class": "timestamp",
+        "availability_topic": MQTT_TOPIC_PREFIX + "/status",
+        "payload_available": "Online",
+        "payload_not_available": "Offline",
+        "entity_category": "diagnostic",
+        "device": _ha_device(),
+    }
+    client.publish(f"{HA_DISCOVERY_PREFIX}/sensor/{MQTT_CLIENT_ID}_last_reading/config",
+                   json.dumps(cfg), qos=1, retain=True)
+
+
+def _publish_meter_discovery(msg: dict):
+    meter_id = msg["ID"]
+    if not (HA_DISCOVERY and HA_DISCOVERY_METERS) or meter_id in _discovered:
+        return
+    if METERMON_SEND_BY_ID.lower() != "true":
+        print("METERMON_HA_DISCOVERY needs METERMON_SEND_BY_ID = 'True'; skipping discovery.")
+        _discovered.add(meter_id)
+        return
+    cfg = {
+        "name": f"{msg['Type']} meter {meter_id}",
+        "unique_id": f"{MQTT_CLIENT_ID}_{meter_id}",
+        "object_id": f"{MQTT_CLIENT_ID}_{msg['Type'].lower()}_{meter_id}",
+        "state_topic": f"{MQTT_TOPIC_PREFIX}/{meter_id}",
+        "value_template": "{{ value_json.Consumption }}",
+        "json_attributes_topic": f"{MQTT_TOPIC_PREFIX}/{meter_id}",
+        "unit_of_measurement": msg["Unit"],
+        "state_class": "total_increasing",
+        "availability_topic": MQTT_TOPIC_PREFIX + "/status",
+        "payload_available": "Online",
+        "payload_not_available": "Offline",
+        "device": _ha_device(),
+    }
+    if msg["Type"] in HA_DEVICE_CLASS:
+        cfg["device_class"] = HA_DEVICE_CLASS[msg["Type"]]
+    client.publish(f"{HA_DISCOVERY_PREFIX}/sensor/{MQTT_CLIENT_ID}_{meter_id}/config",
+                   json.dumps(cfg), qos=1, retain=True)
+    _discovered.add(meter_id)
+
+
+def _maybe_heartbeat():
+    """Publish a retained heartbeat so something outside can alert when readings stop."""
+    global _last_heartbeat
+    now = time.time()
+    if now - _last_heartbeat < HEARTBEAT_SECS:
+        return
+    _last_heartbeat = now
+    payload = {
+        "ts": _iso(now),
+        "last_reading": _iso(_last_reading),
+        "readings_published": _readings_published,
+        "uptime_s": int(now - _started),
+    }
+    client.publish(MQTT_TOPIC_PREFIX + "/heartbeat", json.dumps(payload), retain=True)
 
 def on_disconnect(client, userdata, *args):
     # paho v2 calls (client, userdata, flags, reason_code, properties); v1 calls
@@ -178,7 +268,7 @@ def _handle_message(data):
             msg['Unit'] = "kWh"
         elif data['Message']['Type'] in (2, 9, 12):  # gas meter
             msg['Type'] = "Gas"
-            msg['Consumption'] = data['Message']['Consumption']
+            msg['Consumption'] = data['Message']['Consumption'] / METERMON_GAS_DIVISOR
             msg['Unit'] = "ft³"
         elif data['Message']['Type'] in (3, 11, 13):  # water meter
             msg['Type'] = "Water"
@@ -193,7 +283,7 @@ def _handle_message(data):
             msg['Unit'] = "kWh"
         elif data['Message']['EndpointType'] in (2, 9, 12, 156, 188, 220):  # gas meter
             msg['Type'] = "Gas"
-            msg['Consumption'] = data['Message']['Consumption']
+            msg['Consumption'] = data['Message']['Consumption'] / METERMON_GAS_DIVISOR
             msg['Unit'] = "ft³"
         elif data['Message']['EndpointType'] in (3, 11, 13, 171):  # water meter
             msg['Type'] = "Water"
@@ -239,6 +329,10 @@ def _handle_message(data):
             if METERMON_SEND_BY_ID.lower() == "true":
                 client.publish(MQTT_TOPIC_PREFIX+"/"+msg['ID'], json.dumps(msg), retain=True)  # also publish by ID if enabled
             print(json.dumps(msg))  # also print
+            global _last_reading, _readings_published
+            _last_reading = time.time()
+            _readings_published += 1
+            _publish_meter_discovery(msg)
         # send raw json message if enabled
         if METERMON_SEND_RAW.lower() == "true":
             client.publish(MQTT_TOPIC_PREFIX+"/raw", json.dumps(data), retain=True)  # publish
@@ -281,6 +375,7 @@ while True:
             # wake up every 30s even with no output so the watchdogs can run
             ready, _, _ = select.select([proc.stdout], [], [], 30)
             _check_mqtt_alive()
+            _maybe_heartbeat()
             if not ready:
                 if proc.poll() is not None:
                     break
