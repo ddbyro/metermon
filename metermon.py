@@ -29,6 +29,8 @@ BYPASS_METER_FILTER = settings.BYPASS_METER_FILTER
 # Home Assistant MQTT discovery (needs METERMON_SEND_BY_ID = "True")
 HA_DISCOVERY = str(getattr(settings, "METERMON_HA_DISCOVERY", "False")).lower() == "true"
 HA_DISCOVERY_PREFIX = getattr(settings, "METERMON_HA_DISCOVERY_PREFIX", "homeassistant")
+# set False to announce only the "Last reading" sensor (e.g. meters already defined in HA YAML)
+HA_DISCOVERY_METERS = str(getattr(settings, "METERMON_HA_DISCOVERY_METERS", "True")).lower() == "true"
 HEARTBEAT_SECS = getattr(settings, "METERMON_HEARTBEAT_SECS", 60)
 
 _discovered: set = set()      # meter IDs whose discovery config was sent this connection
@@ -120,7 +122,7 @@ def _publish_heartbeat_discovery():
 
 def _publish_meter_discovery(msg: dict):
     meter_id = msg["ID"]
-    if not HA_DISCOVERY or meter_id in _discovered:
+    if not (HA_DISCOVERY and HA_DISCOVERY_METERS) or meter_id in _discovered:
         return
     if METERMON_SEND_BY_ID.lower() != "true":
         print("METERMON_HA_DISCOVERY needs METERMON_SEND_BY_ID = 'True'; skipping discovery.")

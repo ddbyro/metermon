@@ -34,6 +34,8 @@ RTLAMR_SYMBOLLENGTH = 32
 # "Last reading" timestamp sensor. Requires METERMON_SEND_BY_ID = "True".
 METERMON_HA_DISCOVERY = "False"
 METERMON_HA_DISCOVERY_PREFIX = "homeassistant"
+# "False" = only announce the "Last reading" sensor, not one sensor per meter
+METERMON_HA_DISCOVERY_METERS = "True"
 
 # Retained heartbeat on <prefix>/heartbeat every N seconds, with the time of
 # the last published reading, so you can alert when readings stop.
