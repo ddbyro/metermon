@@ -14,7 +14,7 @@ MQTT_TOPIC_PREFIX = "metermon"
 
 RTL_TCP_SERVER = "127.0.0.1:1234"
 
-RTLAMR_MSGTYPE = "all"
+RTLAMR_MSGTYPE = "all"  # see RTLAMR_MSGTYPE note below
 RTLAMR_UNIQUE = "true"
 
 METERMON_SEND_RAW = "False"
@@ -22,3 +22,24 @@ METERMON_SEND_BY_ID = "True"
 METERMON_ELECTRIC_DIVISOR = 1000.0
 METERMON_GAS_DIVISOR = 1.0
 METERMON_WATER_DIVISOR = 10.0
+
+# rtlamr tuning. Decode only the protocols your meters use: each extra
+# protocol costs CPU (on a Pi 3, "all" saturates a core and drops samples).
+# e.g. "scm+" or "scm,scm+,r900"
+# RTLAMR_MSGTYPE = "scm+"
+# Lower symbol length = lower sample rate = less CPU (rtlamr default 72)
+RTLAMR_SYMBOLLENGTH = 32
+
+# Home Assistant MQTT discovery: auto-create one sensor per meter plus a
+# "Last reading" timestamp sensor. Requires METERMON_SEND_BY_ID = "True".
+METERMON_HA_DISCOVERY = "False"
+METERMON_HA_DISCOVERY_PREFIX = "homeassistant"
+
+# Retained heartbeat on <prefix>/heartbeat every N seconds, with the time of
+# the last published reading, so you can alert when readings stop.
+METERMON_HEARTBEAT_SECS = 60
+
+# Watchdogs: exit (systemd restarts us) if MQTT is down this long; restart
+# rtlamr if it prints nothing for this long.
+METERMON_MQTT_DOWN_EXIT_SECS = 300
+METERMON_RTLAMR_STALL_SECS = 1800

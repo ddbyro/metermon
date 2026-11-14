@@ -1,3 +1,8 @@
+# NOTE: with METERMON_HA_DISCOVERY = "True" in settings.py, Home Assistant creates
+# these sensors automatically (sensor.metermon_<type>_<meterID>) and the manual
+# "platform: mqtt" blocks below are not needed. That legacy syntax is also no
+# longer supported by current Home Assistant releases.
+
 # add this to your "sensor:" block
 # replace <meterID> with the unique ID of the meter you want to measure
 # also make sure to run the metermon container with the "METERMON_SEND_BY_ID" environment variable set to true
@@ -51,5 +56,22 @@
     cycle: monthly
   gas_utility:
     source: sensor.electric_meter_consumption
-    cycle: monthly 
-    
+    cycle: monthly
+
+# Alert when metermon stops publishing readings (needs METERMON_HA_DISCOVERY).
+# Add to automations.yaml and set your own notify service.
+- alias: "metermon: no meter readings"
+  mode: single
+  trigger:
+    - platform: template
+      value_template: >
+        {{ states('sensor.metermon_last_reading') in ['unknown', 'unavailable']
+           or (now() - as_datetime(states('sensor.metermon_last_reading'))) > timedelta(hours=3) }}
+      for: "00:10:00"
+  action:
+    - service: notify.notify   # <--- change this
+      data:
+        title: "metermon"
+        message: >
+          No meter readings since {{ states('sensor.metermon_last_reading') }}.
+          Check the metermon Pi (systemctl status metermon rtl_tcp).
